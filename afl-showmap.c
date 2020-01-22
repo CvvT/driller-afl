@@ -63,7 +63,8 @@ static s32 shm_id;                    /* ID of the SHM region              */
 
 static u8  quiet_mode,                /* Hide non-essential messages?      */
            edges_only,                /* Ignore hit counts?                */
-           cmin_mode;                 /* Generate output in afl-cmin mode? */
+           cmin_mode,                 /* Generate output in afl-cmin mode? */
+           binary_mode;               /* Write output as a binary map      */
 
 static volatile u8
            stop_soon,                 /* Ctrl-C pressed?                   */
@@ -170,6 +171,14 @@ static u32 write_results(void) {
 
   }
 
+  if (binary_mode) {
+    for (i = 0; i < MAP_SIZE; i++)
+      if (trace_bits[i]) ret++;
+    ck_write(fd, trace_bits, MAP_SIZE, out_file);
+    close(fd);
+    return ret;
+  }
+
   f = fdopen(fd, "w");
 
   if (!f) PFATAL("fdopen() failed");
@@ -191,7 +200,7 @@ static u32 write_results(void) {
   }
   
   fclose(f);
-
+  
   return ret;
 
 }
@@ -576,7 +585,7 @@ int main(int argc, char** argv) {
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
-  while ((opt = getopt(argc,argv,"+o:m:t:A:eqZQ")) > 0)
+  while ((opt = getopt(argc,argv,"+o:m:t:A:eqZQb")) > 0)
 
     switch (opt) {
 
@@ -669,6 +678,11 @@ int main(int argc, char** argv) {
 
         qemu_mode = 1;
         break;
+
+      case 'b':
+
+         binary_mode = 1;
+         break;
 
       default:
 

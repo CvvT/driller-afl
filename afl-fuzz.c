@@ -73,7 +73,11 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *doc_path,                  /* Path to documentation dir        */
           *target_path,               /* Path to target binary            */
           *target_binary_path,        /* Path to target binary, not qemu  */
-          *orig_cmdline;              /* Original command line            */
+          *orig_cmdline,              /* Original command line            */
+          *seed_dir;                  /* Directory with all test cases    */
+
+static u32 seed_counter = 0,          /* Total number of test cases       */
+           seed_limit = 0;            /* Max number of seeds              */
 
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u64 mem_limit = MEM_LIMIT;     /* Memory cap for child (MB)        */
@@ -2917,6 +2921,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   if (fault == crash_mode) {
 
+    seed_counter++;
+
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. */
 
@@ -2924,6 +2930,18 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
       if (crash_mode) total_crashes++;
       return 0;
     }    
+
+    // save interesting case with index
+    if (seed_dir) {
+      fn = alloc_printf("%s/%d", seed_dir, seed_counter);
+      fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+      ck_write(fd, mem, len, fn);
+      close(fd);
+      ck_free(fn);
+
+      if (seed_limit && seed_counter > seed_limit) 
+        FATAL("Exceed limit, stop!");
+    }
 
 #ifndef SIMPLE_FILES
 
@@ -6733,6 +6751,10 @@ static void setup_dirs_fds(void) {
 
   }
 
+  if (seed_dir && mkdir(seed_dir, 0700)) {
+    if (errno != EEXIST) PFATAL("Unable to create '%s'", seed_dir);
+  }
+
   /* Queue directory for any starting & discovered paths. */
 
   tmp = alloc_printf("%s/queue", out_dir);
@@ -7344,7 +7366,7 @@ int main(int argc, char** argv) {
 
   doc_path = access(DOC_PATH, F_OK) ? "docs" : DOC_PATH;
 
-  while ((opt = getopt(argc, argv, "+i:o:D:Ef:m:t:T:dnCB:S:M:x:Q")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:s:l:D:Ef:m:t:T:dnCB:S:M:x:Q")) > 0)
 
     switch (opt) {
 
@@ -7361,6 +7383,19 @@ int main(int argc, char** argv) {
 
         if (out_dir) FATAL("Multiple -o options not supported");
         out_dir = optarg;
+        break;
+
+      case 's': /* all mutated seeds */
+
+        if (seed_dir) FATAL("Multiple -s options not supported");
+        seed_dir = optarg;
+        break;
+
+      case 'l': /* Max number of test cases */
+
+        if (sscanf(optarg, "%u", &seed_limit) != 1) {
+            FATAL("Bad integer for -l");
+        }
         break;
 
       case 'D': /* driller */
